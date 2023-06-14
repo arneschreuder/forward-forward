@@ -1,48 +1,78 @@
+# Loosely based on:
+# - https://github.com/mohammadpz/pytorch_forward_forward
+# - https://github.com/pytorch/examples/blob/main/mnist_forward_forward/main.py
+
+import argparse
 from typing import Callable
 
-import matplotlib.pyplot as plt
-import numpy as np
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
 from torchvision import datasets, transforms
 from tqdm import tqdm
 
-# Params
-seed = 1
-batch_size = 1024
-shuffle = True
-hidden_layers = 2
-hidden_units = 128
-activation = nn.ReLU()
-lr = 0.001
-threshold = 2.0
-num_epochs = 10
-p_dropout = None
-
-# Variables
-classes = 10
-width, height, channels = 28, 28, 1
-features_in = width * height * channels
+import wandb
 
 
-if seed is not None:
-    torch.random.manual_seed(seed)
-
-device = (
-    "cuda"
-    if torch.cuda.is_available()
-    else "mps"
-    if torch.backends.mps.is_available()
-    else "cpu"
-)
-device
+def get_activation(activation):
+    if activation == "relu":
+        return nn.ReLU()
+    elif activation == "sigmoid":
+        return nn.Sigmoid()
+    elif activation == "tanh":
+        return nn.Tanh()
+    else:
+        raise ValueError("Invalid activation function.")
 
 
-def overlay_y_on_x(x, y):
+def parse_args():
+    global args
+
+    parser = argparse.ArgumentParser(description="Forward-Forward parameters")
+
+    # Params
+    parser.add_argument("--seed", type=int, default=None, help="Random seed")
+    parser.add_argument(
+        "--batch_size", type=int, default=32, help="Batch size for training"
+    )
+    parser.add_argument(
+        "--shuffle", type=bool, default=True, help="Shuffle the dataset"
+    )
+    parser.add_argument(
+        "--hidden_layers", type=int, default=4, help="Number of hidden layers"
+    )
+    parser.add_argument(
+        "--hidden_units", type=int, default=256, help="Number of units in hidden layer"
+    )
+    parser.add_argument(
+        "--activation", type=str, default="relu", help="Activation function"
+    )
+    parser.add_argument("--lr", type=float, default=0.01, help="Learning rate")
+    parser.add_argument("--threshold", type=float, default=2.0, help="Threshold value")
+    parser.add_argument(
+        "--num_epochs", type=int, default=10, help="Number of epochs for training"
+    )
+    parser.add_argument(
+        "--p_dropout", type=float, default=None, help="Dropout probability"
+    )
+
+    args = parser.parse_args()
+
+    # Convert string to actual activation function
+    args.activation = get_activation(args.activation)
+    return args
+
+
+# CONSTS
+CLASSES = 10
+WIDTH, HEIGHT, CHANNELS = 28, 28, 1
+FEATURES_IN = WIDTH * HEIGHT * CHANNELS
+
+
+def embed_label(x, y):
     """Replace the first 10 pixels of data [x] with one-hot-encoded label [y]"""
     x_ = x.clone()
-    x_[:, :10] *= 0.0
+    x_[:, :10] *= x.min()
     x_[range(x.shape[0]), y] = x.max()
     return x_
 
@@ -87,10 +117,9 @@ class DenseLayer(nn.Linear):
         in_features: int,
         out_features: int,
         activation: torch.optim.Optimizer = None,
-        lr: float = 0.001,
+        lr: float = 0.01,
         threshold: float = 2.0,
         p_dropout=0.2,
-        num_epochs: int = 1000,
     ):
         super().__init__(in_features, out_features)
         self.in_features = in_features
@@ -127,30 +156,28 @@ class DenseLayer(nn.Linear):
 
     def loss(self, g_pos, g_neg):
         # We want to have g_pos >> threshold and g_neg << threshold
-        m_pos = (
-            g_pos - self.threshold
-        )  # -(threshold - g_pos) + (g_neg - threshold) # (g_pos - threshold) + (g_neg - threshold)
+        m_pos = g_pos - self.threshold
         m_neg = g_neg - self.threshold
-        # TODO: This is unnecessary, but added to illustrate the point of a probability being optimised
-        m_pos = self.sigmoid(m_pos)
-        m_neg = self.sigmoid(m_neg)
+        # Maximise positive and minimise negative vectors
         m_sum = -m_pos + m_neg
         # Ensure that the loss value is positive
-        cost = torch.log(1 + torch.exp(m_sum))
+        cost = self.softplus(m_sum)
         # Get the batch mean
         cost = cost.mean()
         return cost
 
-    def train(self, x_pos: torch.Tensor, x_neg: torch.Tensor):
+    def train_layer(self, x_pos: torch.Tensor, x_neg: torch.Tensor):
+        self.training = True
+
         # Calculate positive and negative goodness
-        # TODO: Ensure this does not get the gradients of any previous layer
         h_pos, g_pos = self.forward(x_pos)
         h_neg, g_neg = self.forward(x_neg)
+
+        # Calculate loss
         loss = self.loss(g_pos, g_neg)
+
+        # Optimise
         self.optimiser.zero_grad()
-        # Compute loss
-        # this backward just compute the derivative and hence
-        # is not considered backpropagation.
         loss.backward()
         self.optimiser.step()
 
@@ -168,7 +195,7 @@ class FFFNN(nn.Module):
         activation: Callable = nn.ReLU(),
         lr: float = 0.001,
         threshold: float = 2.0,
-        p_dropout: float = 0.2,
+        p_dropout: float = 0.1,
     ):
         super(FFFNN, self).__init__()
         self.in_features = in_features
@@ -196,10 +223,12 @@ class FFFNN(nn.Module):
     def predict(self, x: torch.Tensor):
         goodness_per_label = []
         for y in range(self.classes):
-            h = overlay_y_on_x(x, y)
+            h = embed_label(x, y)
             _, goodness = self.forward(h)
-            # Only use the goodness from all the layers except the first hidden
-            # print(goodness)
+            # From original paper
+            # Only use the goodness from the second layer onwards
+            # However, commenting out for now,
+            # since then you technically can not have a single layer network
             # goodness = goodness[1:]
             # Get the sum of the layer goodnesses
             goodness = sum(goodness)
@@ -212,54 +241,69 @@ class FFFNN(nn.Module):
         label = goodness_per_label.argmax(dim=1)
         return label
 
-    def train(self, x_pos: torch.Tensor, x_neg: torch.Tensor, layer_idx):
+    def train_model(self, x_pos: torch.Tensor, x_neg: torch.Tensor, layer_idx):
         h_pos, h_neg = x_pos, x_neg
         g_pos, g_neg, loss = None, None, None
+        (h_pos, g_pos), (h_neg, g_neg), loss = (x_pos, None), (x_neg, None), None
 
         for l, layer in enumerate(self.layers):
             if l < layer_idx:
-                # with torch.no_grad():
-                h_pos, g_pos = layer.forward(h_pos)
-                h_neg, g_neg = layer.forward(h_neg)
+                # Do not compute gradients here, since it is not necessary
+                with torch.no_grad():
+                    h_pos, g_pos = layer.forward(h_pos)
+                    h_neg, g_neg = layer.forward(h_neg)
             if l == layer_idx:
-                return layer.train(h_pos, h_neg)
+                return layer.train_layer(h_pos, h_neg)
 
         return (h_pos, g_pos), (h_neg, g_neg), loss
 
 
-# def get_derangement(n):
-#     permutation = torch.randperm(n)
-#     match = torch.arange(n, dtype=torch.long)
-#     derangement = (permutation + (permutation == match).long()) % n
-#     return derangement
-
-
 def train(model, dataset):
-    for l, layer in enumerate(model.layers):
-        for e in (pbar := tqdm(range(num_epochs))):
-            mean_train_loss = 0.0
+    # Set model in training mode
+    model.train()
+
+    # Main training loop
+    for l, _ in enumerate(model.layers):
+        for e in range(args.num_epochs):
             mean_train_err = 0.0
             mean_test_err = 0.0
-            for x, y in dataset.train:
-                x, y = x.to(device), y.to(device)
-                x_pos = overlay_y_on_x(x, y)
-                rnd = torch.randperm(y.size(0))
-                x_neg = overlay_y_on_x(x, y[rnd])
-                _, _, loss = model.train(x_pos, x_neg, l)
-                mean_train_loss += loss
-                mean_train_loss /= 2
 
+            for x, y in (pbar := tqdm(dataset.train)):
+                x, y = x.to(device), y.to(device)
+                x_pos = embed_label(x, y)
+                rnd = torch.randperm(y.size(0))
+                x_neg = embed_label(x, y[rnd])
+                _, _, loss = model.train_model(x_pos, x_neg, l)
+                pbar.set_description(
+                    f"layer: {l+1}/{len(model.layers)}, epoch: {e+1}/{args.num_epochs}, loss: {loss:.5f}"
+                )
+                wandb.log({"loss": loss})
+
+            for x, y in dataset.test:
+                x, y = x.to(device), y.to(device)
                 pred_y = model.predict(x)
                 train_err = 1.0 - pred_y.eq(y).float().mean().item()
                 mean_train_err += train_err
                 mean_train_err /= 2
 
-                pbar.set_description(
-                    f"layer: {l}, epoch: {e}, avg train loss: {mean_train_loss:.5f}, avg train err: {mean_train_err:.5f}"
-                )
+            wandb.log({"mean train error": mean_train_err})
+            print(f"mean train error: {mean_train_err:.5f}")
+
+            for x, y in dataset.test:
+                x, y = x.to(device), y.to(device)
+                pred_y = model.predict(x)
+                test_err = 1.0 - pred_y.eq(y).float().mean().item()
+                mean_test_err += test_err
+
+            wandb.log({"mean test error": mean_test_err})
+            print(f"mean test err: {mean_test_err:.5f}")
 
 
 def test(model, dataset):
+    # Set model in testing mode
+    model.eval()
+
+    # Run tests against test set
     test_errs = []
     for x, y in dataset.test:
         x, y = x.to(device), y.to(device)
@@ -269,22 +313,47 @@ def test(model, dataset):
     print(f"{(sum(test_errs)/len(test_errs)):.5f}")
 
 
+def setup():
+    global args
+    global device
+
+    if args.seed is not None:
+        torch.random.manual_seed(args.seed)
+
+    device = (
+        "cuda"
+        if torch.cuda.is_available()
+        else "mps"
+        if torch.backends.mps.is_available()
+        else "cpu"
+    )
+
+    # Log metrics with Weights & Biases
+    wandb.init(project="forward-forward", entity="arneschreuder", config=args)
+
+
 if __name__ == "__main__":
-    dataset = Dataset(batch_size, shuffle=shuffle)
-    # dataset = dataset.to(device)
+    global args
+
+    parse_args()
+
+    print("Arguments:")
+    print(args)
+
+    setup()
+
+    dataset = Dataset(args.batch_size, shuffle=args.shuffle)
 
     model = FFFNN(
-        features_in,
-        classes,
-        hidden_layers,
-        hidden_units,
-        activation,
-        lr,
-        threshold,
+        FEATURES_IN,
+        CLASSES,
+        args.hidden_layers,
+        args.hidden_units,
+        args.activation,
+        args.lr,
+        args.threshold,
     )
     model = model.to(device)
+
     train(model, dataset)
-    model.training = False
-    for layer in model.layers:
-        layer.training = False
     test(model, dataset)
