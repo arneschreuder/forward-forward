@@ -294,6 +294,7 @@ def train(model, dataset):
                 pred_y = model.predict(x)
                 test_err = 1.0 - pred_y.eq(y).float().mean().item()
                 mean_test_err += test_err
+                mean_test_err /= 2
 
             wandb.log({"mean test error": mean_test_err})
             print(f"mean test err: {mean_test_err:.5f}")
