@@ -277,7 +277,7 @@ def train(model, dataset):
                 pbar.set_description(
                     f"layer: {l+1}/{len(model.layers)}, epoch: {e+1}/{args.num_epochs}, loss: {loss:.5f}"
                 )
-                wandb.log({"loss": loss})
+                wandb.log({f"layer {l+1} loss": loss})
 
             for x, y in dataset.test:
                 x, y = x.to(device), y.to(device)
