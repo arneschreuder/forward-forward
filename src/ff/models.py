@@ -102,7 +102,7 @@ class FFHiddenLayer(FFLayer):
         loss.backward()
         self.optimiser.step()
 
-        return loss
+        return (h_pos, g_pos), (h_neg, g_neg), loss
 
 
 class FFSoftmaxLayer(FFLayer):

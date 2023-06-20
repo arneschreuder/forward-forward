@@ -2,7 +2,7 @@ seed: 1
 dataset:
   path: 'src.datasets.MNIST'
   params:
-    batch_size: 32
+    batch_size: 256
     shuffle: true
 model:
   path: 'src.ff.models.FFClassifier'
@@ -16,11 +16,11 @@ model:
     threshold: 2.0
     optimiser:
       path: 'torch.optim.Adam'
-    learning_rate: 0.001
+    learning_rate: 0.003
 trainer:
-  path: 'src.ff.trainers.GreedyTrainer'
+  path: 'src.ff.trainers.NonGreedyTrainer'
   params:
-    epochs: 10
+    epochs: 15
 wandb:
   project: "forward-forward"
   entity: "arneschreuder"
