@@ -9,18 +9,21 @@ model:
   params:
     in_features: 784
     hidden_layers: 4
-    hidden_units: 2000
+    hidden_units: 784
     activation:
-      path: 'torch.nn.LeakyReLU'
+      path: 'torch.nn.ReLU'
     dropout: 0.2
     threshold: 2.0
     optimiser:
       path: 'torch.optim.Adam'
-    learning_rate: 0.003
+    learning_rate: 0.001
+  location: 'models/model.pt'
 trainer:
-  path: 'src.ff.trainers.NonGreedyTrainer'
+  path: 'src.ff.trainers.GreedyTrainer'
   params:
-    epochs: 15
+    epochs: 5
+tester:
+  path: 'src.ff.testers.Tester'
 wandb:
   project: "forward-forward"
   entity: "arneschreuder"

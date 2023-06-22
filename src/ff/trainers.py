@@ -10,11 +10,9 @@ from src.metrics import accuracy
 
 
 class GreedyTrainer:
-    def __init__(
-        self, epochs: int = 10, seed: Any | int = None, metrics: list[Callable] = []
-    ):
+    def __init__(self, epochs: int = 10, save_to: str = "models"):
         self.epochs = epochs
-        self.metrics = metrics
+        self.save_to = save_to
 
     def train(self, model: FFFNN, dataset: Dataset, device: Any | str = "cpu"):
         # Set model in training mode
@@ -41,7 +39,7 @@ class GreedyTrainer:
                                 h_pos = layer.forward(h_pos)
                                 h_neg = layer.forward(h_neg)
                         elif forward_layer == train_layer:
-                            (h_pos, g_pos), (h_neg, g_neg), loss = layer.train(
+                            (h_pos, g_pos), (h_neg, g_neg), loss = layer.train_layer(
                                 h_pos, h_neg
                             )
                             pbar.set_description(
@@ -63,27 +61,24 @@ class GreedyTrainer:
         )
         wandb.log({"mean train error": mean_train_err})
 
-        # Test Evaluation
-        test_accuracies = []
-        for x, y in dataset.test:
-            x, y = x.to(device), y.to(device)
-            pred_y = model.predict(x)
-            acc = accuracy(pred_y, y)
-            test_accuracies.append(acc)
-        mean_test_accuracy = torch.mean(torch.tensor(test_accuracies))
-        mean_test_err = 1.0 - mean_test_accuracy
-        print(
-            f"test accuracy: {mean_test_accuracy*100:.2f}%, test error: {(1.0 - mean_test_accuracy)*100:.2f}%"
-        )
-        wandb.log({"mean test error": mean_test_err})
+        # # Validation Evaluation
+        # test_accuracies = []
+        # for x, y in dataset.test:
+        #     x, y = x.to(device), y.to(device)
+        #     pred_y = model.predict(x)
+        #     acc = accuracy(pred_y, y)
+        #     test_accuracies.append(acc)
+        # mean_test_accuracy = torch.mean(torch.tensor(test_accuracies))
+        # mean_test_err = 1.0 - mean_test_accuracy
+        # print(
+        #     f"test accuracy: {mean_test_accuracy*100:.2f}%, test error: {(1.0 - mean_test_accuracy)*100:.2f}%"
+        # )
+        # wandb.log({"mean test error": mean_test_err})
 
 
 class NonGreedyTrainer:
-    def __init__(
-        self, epochs: int = 10, seed: Any | int = None, metrics: list[Callable] = []
-    ):
+    def __init__(self, epochs: int = 10):
         self.epochs = epochs
-        self.metrics = metrics
 
     def train(self, model: FFFNN, dataset: Dataset, device: Any | str = "cpu"):
         # Set model in training mode
@@ -129,16 +124,16 @@ class NonGreedyTrainer:
         )
         wandb.log({"mean train error": mean_train_err})
 
-        # Test Evaluation
-        test_accuracies = []
-        for x, y in dataset.test:
-            x, y = x.to(device), y.to(device)
-            pred_y = model.predict(x)
-            acc = accuracy(pred_y, y)
-            test_accuracies.append(acc)
-        mean_test_accuracy = torch.mean(torch.tensor(test_accuracies))
-        mean_test_err = 1.0 - mean_test_accuracy
-        print(
-            f"test accuracy: {mean_test_accuracy*100:.2f}%, test error: {(1.0 - mean_test_accuracy)*100:.2f}%"
-        )
-        wandb.log({"mean test error": mean_test_err})
+        # # Validation Evaluation
+        # test_accuracies = []
+        # for x, y in dataset.test:
+        #     x, y = x.to(device), y.to(device)
+        #     pred_y = model.predict(x)
+        #     acc = accuracy(pred_y, y)
+        #     test_accuracies.append(acc)
+        # mean_test_accuracy = torch.mean(torch.tensor(test_accuracies))
+        # mean_test_err = 1.0 - mean_test_accuracy
+        # print(
+        #     f"test accuracy: {mean_test_accuracy*100:.2f}%, test error: {(1.0 - mean_test_accuracy)*100:.2f}%"
+        # )
+        # wandb.log({"mean test error": mean_test_err})

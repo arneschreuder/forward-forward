@@ -1,4 +1,6 @@
-from typing import Any, List
+# This implementation is based on:
+# * https://github.com/mohammadpz/pytorch_forward_forward
+# * https://github.com/pytorch/examples/blob/main/mnist_forward_forward/main.py
 
 import torch
 from torch import nn
@@ -83,9 +85,7 @@ class FFHiddenLayer(FFLayer):
         loss = loss.mean()
         return loss
 
-    def train(self, x_pos, x_neg):
-        super().train()
-
+    def train_layer(self, x_pos, x_neg):
         # Calculate positive and negative goodness
         h_pos = self.forward(x_pos)
         h_neg = self.forward(x_neg)
@@ -151,7 +151,9 @@ class FFFNN(nn.Module):
         self.optimiser = optimiser
         self.learning_rate = learning_rate
 
-        self.layers: List[FFHiddenLayer] = []
+        # Use a module list to track hidden layers
+        self.layers = nn.ModuleList()
+
         for i in range(hidden_layers):
             in_features = in_features if i == 0 else hidden_units
             out_features = hidden_units

@@ -1,5 +1,4 @@
 import argparse
-import os
 
 import torch
 
@@ -38,16 +37,10 @@ if __name__ == "__main__":
     wandb.init(project=config.wandb.project, entity=config.wandb.entity, config=config)
 
     dataset = instantiate_class_from_config(config.dataset)
+
     model = instantiate_class_from_config(config.model)
-    trainer = instantiate_class_from_config(config.trainer)
-    trainer.train(model=model, dataset=dataset, device=device)
+    params = torch.load(config.model.location)
+    model.load_state_dict(params)
 
-    # Check if the directory exists
-    model_dir = os.path.dirname(config.model.location)
-    if not os.path.exists(model_dir):
-        # If it doesn't exist, create it
-        os.makedirs(model_dir)
-    torch.save(model.state_dict(), config.model.location)
-
-    # Copies the file in args.config to the model directory
-    os.system(f"cp {args.config} {model_dir}")
+    tester = instantiate_class_from_config(config.tester)
+    tester.test(model=model, dataset=dataset, device=device)
